@@ -6,12 +6,10 @@ import matplotlib.pyplot as plt
 from reportlab.platypus import SimpleDocTemplate, Table
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
 # ======================
-# 로그인 (그대로 유지)
+# 로그인
 # ======================
 USERS = {"HYE": "102108"}
 
@@ -55,14 +53,14 @@ def save_data(df):
 orders = load_data()
 
 # ======================
-# 합계 계산 (유지)
+# 합계 계산
 # ======================
 orders["수량"] = pd.to_numeric(orders["수량"], errors="coerce").fillna(0)
 orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 orders["합계"] = orders["수량"] * orders["단가"]
 
 # ======================
-# 리스트 (현재 화면 유지 상태 그대로)
+# 리스트 (합계 → 입금여부 유지)
 # ======================
 display = orders[[
     "삭제","날짜","고객명","상품번호",
@@ -77,7 +75,7 @@ edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
 
 # ======================
-# 🔥 고객 정산서 (완전 정상 + 한글 100% 해결)
+# 고객 정산서 (Cloud 안정 버전)
 # ======================
 st.subheader("📄 고객 정산서")
 
@@ -87,12 +85,13 @@ if not orders.empty:
 
     if st.button("정산서 PDF 생성"):
 
-        pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
-
         data = orders[orders["고객명"] == selected_customer].copy()
 
         pdf_columns = ["날짜","상품번호","수량","단가","합계","입금여부"]
-        data = data[pdf_columns].astype(str)
+        data = data[pdf_columns]
+
+        # 한글 안전 문자열 변환
+        data = data.astype(str)
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -102,8 +101,6 @@ if not orders.empty:
         table = Table(table_data)
         table.setStyle([
             ("GRID",(0,0),(-1,-1),1,colors.black),
-            ("FONTNAME",(0,0),(-1,-1),'HYSMyeongJo-Medium'),
-            ("FONTSIZE",(0,0),(-1,-1),9),
             ("BACKGROUND",(0,0),(-1,0),colors.lightgrey)
         ])
 
