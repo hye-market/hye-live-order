@@ -94,15 +94,12 @@ with top3:
         st.rerun()
 
 # =========================
-# 🔥 주문 입력 (날짜 자동 오늘 적용 FIX)
+# 🔥 주문 입력 (날짜 FIX 완료)
 # =========================
 
-# 오늘 날짜 항상 강제 갱신
-today_real = date.today()
-
-# session_state에 저장된 날짜가 오늘이 아니면 오늘로 갱신
-if "order_date" not in st.session_state or st.session_state.order_date != today_real:
-    st.session_state.order_date = today_real
+# 최초 1회만 오늘 날짜 세팅
+if "order_date" not in st.session_state:
+    st.session_state.order_date = date.today()
 
 with st.container(border=True):
     st.subheader("📝 주문 입력")
@@ -140,7 +137,7 @@ with st.container(border=True):
             st.rerun()
 
 # =========================
-# 이하 전부 기존 그대로 유지
+# 이하 기존 그대로 유지
 # =========================
 
 search = st.text_input("🔎 고객 검색")
@@ -189,6 +186,33 @@ c1,c2,c3 = st.columns(3)
 c1.metric("총매출", f"{total:,.0f}원")
 c2.metric("입금액", f"{paid_sum:,.0f}원")
 c3.metric("미입금", f"{unpaid_sum:,.0f}원")
+
+# =========================
+# 🔥 정산서 완전 복구
+# =========================
+st.subheader("📄 고객 정산서")
+
+if not edited.empty:
+    selected_customer = st.selectbox("고객 선택", edited["고객명"].unique())
+
+    if st.button("정산서 PDF 생성"):
+        pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
+        data = edited[edited["고객명"] == selected_customer]
+        data = data[["날짜","상품번호","수량","단가","합계","입금여부"]].astype(str)
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        table_data = [list(data.columns)] + data.values.tolist()
+        table = Table(table_data)
+        table.setStyle([
+            ("GRID",(0,0),(-1,-1),1,colors.black),
+            ("FONTNAME",(0,0),(-1,-1),'HYSMyeongJo-Medium'),
+        ])
+        doc.build([table])
+
+        st.download_button("📥 PDF 다운로드",
+                           data=buffer.getvalue(),
+                           file_name=f"{selected_customer}_정산서.pdf")
 
 st.subheader("📊 이번달 일별 매출")
 
