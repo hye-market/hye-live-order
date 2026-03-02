@@ -8,10 +8,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 
 # ======================
-# 로그인 (변경 완료)
+# 로그인 (수정 완료)
 # ======================
 USERS = {
-    "HYE": "102018"
+    "HYE": "102108"
 }
 
 if "login" not in st.session_state:
@@ -36,25 +36,6 @@ if not st.session_state.login:
 # ======================
 st.set_page_config(page_title="HYE LIVE ORDER", layout="wide")
 
-st.markdown("""
-<style>
-.main {background-color:#0e1117;}
-h1,h2,h3 {color:white;}
-.stButton>button {
-    background-color:#c9a86a;
-    color:black;
-    border-radius:10px;
-    height:45px;
-    font-weight:bold;
-}
-</style>
-""", unsafe_allow_html=True)
-
-try:
-    st.image("hye_logo.png", width=200)
-except:
-    pass
-
 st.title("💎 HYE LIVE ORDER SYSTEM")
 
 DATA_FILE = "orders_data.xlsx"
@@ -65,7 +46,7 @@ COLUMNS = [
 ]
 
 # ======================
-# 데이터 로드
+# 데이터 로드 / 저장
 # ======================
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -81,7 +62,7 @@ def save_data(df):
 orders = load_data()
 
 # ======================
-# 엑셀 다운로드 상단
+# 엑셀 다운로드
 # ======================
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "rb") as f:
@@ -118,7 +99,7 @@ with col2:
 st.subheader("주문 입력")
 
 with st.form("order_form", clear_on_submit=True):
-    c1,c2,c3,c4,c5,c6 = st.columns([1,1,1,1,1,1])
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
     date = c1.date_input("날짜", datetime.today())
     name = c2.text_input("고객명")
     product = c3.text_input("상품번호")
@@ -176,39 +157,41 @@ if st.button("🗑 선택 삭제"):
     st.rerun()
 
 # ======================
-# 고객별 정산서 PDF
+# 🔥 고객별 묶음 합계
 # ======================
-st.subheader("📄 고객별 정산서")
-
-customer_list = edited["고객명"].unique()
-selected_customer = st.selectbox("고객 선택", customer_list)
-
-if selected_customer:
-    customer_data = edited[edited["고객명"] == selected_customer]
-    pdf_name = f"{selected_customer}_정산서.pdf"
-    doc = SimpleDocTemplate(pdf_name, pagesize=A4)
-    data = [["상품", "수량", "단가", "합계"]]
-
-    for _, row in customer_data.iterrows():
-        data.append([
-            row["상품번호"],
-            row["수량"],
-            row["단가"],
-            row["합계"]
-        ])
-
-    table = Table(data)
-    table.setStyle([
-        ('GRID',(0,0),(-1,-1),1,colors.black)
-    ])
-
-    doc.build([table])
-
-    with open(pdf_name, "rb") as f:
-        st.download_button("PDF 다운로드", f, file_name=pdf_name)
+st.subheader("👥 고객별 묶음 합계")
+group = edited.groupby("고객명")["합계"].sum().reset_index()
+st.dataframe(group.sort_values(by="합계", ascending=False))
 
 # ======================
-# 일별 매출 (일자 정상화)
+# 🔥 VIP 자동 분류
+# ======================
+st.subheader("💎 고객 등급")
+vip = edited.groupby("고객명")["합계"].sum().reset_index()
+vip["등급"] = vip["합계"].apply(lambda x: "💎 VIP" if x >= 1000000 else "🟢 일반")
+st.dataframe(vip.sort_values(by="합계", ascending=False))
+
+# ======================
+# 🔥 고객별 미입금
+# ======================
+st.subheader("⚠ 고객별 미입금")
+unpaid = edited[edited["입금여부"]==False].groupby("고객명")["합계"].sum().reset_index()
+st.dataframe(unpaid.sort_values(by="합계", ascending=False))
+
+# ======================
+# 정산 요약
+# ======================
+total = edited["합계"].sum()
+paid = edited[edited["입금여부"]==True]["합계"].sum()
+unpaid_total = edited[edited["입금여부"]==False]["합계"].sum()
+
+c1,c2,c3 = st.columns(3)
+c1.metric("총매출", f"{total:,.0f}원")
+c2.metric("입금액", f"{paid:,.0f}원")
+c3.metric("미입금", f"{unpaid_total:,.0f}원")
+
+# ======================
+# 📊 일별 매출 (10만원 단위)
 # ======================
 st.subheader("📊 이번달 일별 매출")
 
@@ -227,6 +210,7 @@ if not month_data.empty:
     plt.figure()
     plt.plot(daily["일"], daily["합계"], marker="o")
     plt.xticks(range(1,32))
+    plt.yticks(range(0, int(daily["합계"].max())+100000, 100000))
     plt.xlabel("일자")
     plt.ylabel("매출")
     st.pyplot(plt)
