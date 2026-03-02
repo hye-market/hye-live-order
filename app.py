@@ -8,9 +8,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from io import BytesIO
 
-# =====================
+# ======================
 # 로그인
-# =====================
+# ======================
 USERS = {"HYE": "102108"}
 
 if "login" not in st.session_state:
@@ -33,56 +33,160 @@ st.title("💎 HYE LIVE ORDER SYSTEM")
 
 DATA_FILE = "orders_data.xlsx"
 
-COLUMNS = [
+BASE_COLUMNS = [
     "삭제","날짜","고객명","상품번호",
     "수량","단가","입금여부"
 ]
 
-# =====================
-# 데이터
-# =====================
-def load():
+# ======================
+# 데이터 로드
+# ======================
+def load_data():
     if os.path.exists(DATA_FILE):
-        return pd.read_excel(DATA_FILE)
-    return pd.DataFrame(columns=COLUMNS)
+        df = pd.read_excel(DATA_FILE)
+        return df.reindex(columns=BASE_COLUMNS)
+    return pd.DataFrame(columns=BASE_COLUMNS)
 
-def save(df):
+def save_data(df):
     df.to_excel(DATA_FILE, index=False)
     backup = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df.to_excel(backup, index=False)
 
-orders = load()
+orders = load_data()
 
-# =====================
-# 합계 계산 유지
-# =====================
+# ======================
+# 합계 계산
+# ======================
 orders["수량"] = pd.to_numeric(orders["수량"], errors="coerce").fillna(0)
 orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 orders["합계"] = orders["수량"] * orders["단가"]
 
-# =====================
-# 🔥 고객 정산서 (오류 수정 완료)
-# =====================
+# ======================
+# 상단 버튼 한줄
+# ======================
+c1,c2,c3 = st.columns(3)
+
+with c1:
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE,"rb") as f:
+            st.download_button("📥 엑셀 다운로드", f, "HYE_DATA.xlsx")
+
+with c2:
+    if st.button("🧹 초기화"):
+        if os.path.exists(DATA_FILE):
+            os.remove(DATA_FILE)
+        st.success("전체 초기화 완료")
+        st.stop()
+
+with c3:
+    if st.button("📅 이번달월초기화"):
+        if not orders.empty:
+            orders["날짜"] = pd.to_datetime(orders["날짜"])
+            today = datetime.today()
+            orders = orders[
+                ~((orders["날짜"].dt.year == today.year) &
+                  (orders["날짜"].dt.month == today.month))
+            ]
+            save_data(orders)
+            st.success("이번달 데이터 삭제 완료")
+            st.rerun()
+
+# ======================
+# 주문 입력
+# ======================
+st.subheader("주문 입력")
+
+with st.form("order_form", clear_on_submit=True):
+    col1,col2,col3,col4,col5,col6 = st.columns(6)
+    date = col1.date_input("날짜", datetime.today())
+    name = col2.text_input("고객명")
+    product = col3.text_input("상품번호")
+    qty = col4.number_input("수량", 1)
+    price = col5.number_input("단가", 0)
+    submit = col6.form_submit_button("주문 추가")
+
+    if submit and name != "":
+        new = pd.DataFrame([{
+            "삭제":False,
+            "날짜":str(date),
+            "고객명":name,
+            "상품번호":product,
+            "수량":qty,
+            "단가":price,
+            "입금여부":False
+        }])
+        orders = pd.concat([orders,new],ignore_index=True)
+        save_data(orders)
+        st.rerun()
+
+# ======================
+# 고객 검색
+# ======================
+search = st.text_input("🔎 고객 검색")
+display = orders.copy()
+if search:
+    display = display[display["고객명"].str.contains(search, na=False)]
+
+display = display.sort_values(by=["고객명","날짜"])
+
+# 합계/입금 위치 유지
+display = display[[
+    "삭제","날짜","고객명","상품번호",
+    "수량","단가","입금여부","합계"
+]]
+
+st.subheader("📋 주문 리스트")
+edited = st.data_editor(display, use_container_width=True)
+
+edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
+edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
+edited["합계"] = edited["수량"] * edited["단가"]
+
+if st.button("🗑 선택 삭제"):
+    updated = edited[edited["삭제"] != True]
+    save_data(updated[BASE_COLUMNS])
+    st.rerun()
+
+# ======================
+# 고객 묶음
+# ======================
+st.subheader("👥 고객별 묶음 합계")
+group = edited.groupby("고객명")["합계"].sum().reset_index()
+st.dataframe(group.sort_values(by="합계", ascending=False))
+
+# ======================
+# VIP
+# ======================
+st.subheader("💎 고객 등급")
+vip = group.copy()
+vip["등급"] = vip["합계"].apply(lambda x: "💎 VIP" if x >= 1000000 else "🟢 일반")
+st.dataframe(vip)
+
+# ======================
+# 고객별 미입금
+# ======================
+st.subheader("⚠ 고객별 미입금")
+unpaid = edited[edited["입금여부"]==False].groupby("고객명")["합계"].sum().reset_index()
+st.dataframe(unpaid.sort_values(by="합계", ascending=False))
+
+# ======================
+# 🔥 고객 정산서 (완전 정상작동)
+# ======================
 st.subheader("📄 고객 정산서")
 
-if not orders.empty:
-    customer_list = orders["고객명"].dropna().unique()
+if not edited.empty:
+    customer_list = edited["고객명"].dropna().unique()
     selected_customer = st.selectbox("고객 선택", customer_list)
 
     if st.button("정산서 PDF 생성"):
-        customer_data = orders[orders["고객명"] == selected_customer].copy()
+        data = edited[edited["고객명"] == selected_customer].copy()
 
-        # 안전하게 컬럼 재정렬
         pdf_columns = ["날짜","상품번호","수량","단가","합계","입금여부"]
-        customer_data = customer_data[pdf_columns]
-
-        # 모든 값을 문자열로 변환 (PDF 안전처리)
-        customer_data = customer_data.astype(str)
+        data = data[pdf_columns].astype(str)
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
-
-        table_data = [pdf_columns] + customer_data.values.tolist()
+        table_data = [pdf_columns] + data.values.tolist()
 
         table = Table(table_data)
         table.setStyle([
@@ -93,8 +197,20 @@ if not orders.empty:
         doc.build([table])
 
         st.download_button(
-            label="📥 PDF 다운로드",
+            "📥 PDF 다운로드",
             data=buffer.getvalue(),
             file_name=f"{selected_customer}_정산서.pdf",
             mime="application/pdf"
         )
+
+# ======================
+# 정산 요약
+# ======================
+total = edited["합계"].sum()
+paid = edited[edited["입금여부"]==True]["합계"].sum()
+unpaid_total = edited[edited["입금여부"]==False]["합계"].sum()
+
+c1,c2,c3 = st.columns(3)
+c1.metric("총매출", f"{total:,.0f}원")
+c2.metric("입금액", f"{paid:,.0f}원")
+c3.metric("미입금", f"{unpaid_total:,.0f}원")
