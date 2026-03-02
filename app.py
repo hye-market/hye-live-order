@@ -94,8 +94,16 @@ with top3:
         st.rerun()
 
 # =========================
-# 주문 입력 (✅ 날짜 자동 오늘로 수정)
+# 🔥 주문 입력 (날짜 자동 오늘 적용 FIX)
 # =========================
+
+# 오늘 날짜 항상 강제 갱신
+today_real = date.today()
+
+# session_state에 저장된 날짜가 오늘이 아니면 오늘로 갱신
+if "order_date" not in st.session_state or st.session_state.order_date != today_real:
+    st.session_state.order_date = today_real
+
 with st.container(border=True):
     st.subheader("📝 주문 입력")
 
@@ -103,13 +111,9 @@ with st.container(border=True):
 
         c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
 
-        # 🔥 오늘 날짜 매 실행 시 갱신
-        today_date = date.today()
-
         input_date = c1.date_input(
             "날짜",
-            value=today_date,
-            key="order_date_input"
+            key="order_date"
         )
 
         name = c2.text_input("고객명")
