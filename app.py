@@ -63,38 +63,93 @@ if orders.empty:
 orders["수량"] = pd.to_numeric(orders["수량"], errors="coerce").fillna(0)
 orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 orders["입금여부"] = orders["입금여부"].fillna(False)
-
 orders["합계"] = orders["수량"] * orders["단가"]
 
 # =========================
-# 🔎 검색창
+# 🔥 상단 버튼 복구
+# =========================
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "rb") as f:
+            st.download_button("📥 엑셀 다운로드", f, "HYE_DATA.xlsx")
+
+with col2:
+    if st.button("🧹 초기화"):
+        if os.path.exists(DATA_FILE):
+            os.remove(DATA_FILE)
+        st.success("전체 초기화 완료")
+        st.rerun()
+
+with col3:
+    if st.button("📅 이번달월초기화"):
+        if not orders.empty:
+            orders["날짜"] = pd.to_datetime(orders["날짜"])
+            today = datetime.today()
+            orders = orders[
+                ~((orders["날짜"].dt.year == today.year) &
+                  (orders["날짜"].dt.month == today.month))
+            ]
+            save_data(orders)
+            st.success("이번달 데이터 삭제 완료")
+            st.rerun()
+
+# =========================
+# 🔥 주문 입력 폼 복구
+# =========================
+st.subheader("📝 주문 입력")
+
+with st.form("order_form", clear_on_submit=True):
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+
+    date = c1.date_input("날짜", datetime.today())
+    name = c2.text_input("고객명")
+    product = c3.text_input("상품번호")
+    qty = c4.number_input("수량", min_value=1, value=1)
+    price = c5.number_input("단가", min_value=0, value=0)
+    paid = c6.checkbox("입금완료")
+
+    submit = st.form_submit_button("주문 추가")
+
+    if submit and name:
+        new = pd.DataFrame([{
+            "삭제":False,
+            "날짜":str(date),
+            "고객명":name,
+            "상품번호":product,
+            "수량":qty,
+            "단가":price,
+            "입금여부":paid
+        }])
+        orders = pd.concat([orders,new],ignore_index=True)
+        save_data(orders)
+        st.rerun()
+
+# =========================
+# 검색창
 # =========================
 search = st.text_input("🔎 고객 검색")
 
 display = orders.copy()
-
 if search:
     display = display[display["고객명"].astype(str).str.contains(search, na=False)]
+
+display["합계"] = display["수량"] * display["단가"]
 
 # =========================
 # 주문 리스트
 # =========================
 st.subheader("📋 주문 리스트")
 
-display_editor = display[[
+editor = display[[
     "삭제","날짜","고객명","상품번호",
     "수량","단가","합계","입금여부"
 ]]
 
-edited = st.data_editor(display_editor, use_container_width=True)
+edited = st.data_editor(editor, use_container_width=True)
 
-# =========================
-# 합계 자동 계산 + 저장 안정화
-# =========================
-edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
-edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
-
 save_df = edited[BASE_COLUMNS]
 
 if not save_df.equals(orders[BASE_COLUMNS]):
@@ -108,7 +163,7 @@ group = edited.groupby("고객명")["합계"].sum().reset_index()
 st.dataframe(group.sort_values(by="합계", ascending=False))
 
 # =========================
-# VIP 자동 분류
+# VIP
 # =========================
 st.subheader("💎 고객 등급")
 vip = group.copy()
@@ -192,7 +247,6 @@ if not month_data.empty:
     fig, ax = plt.subplots()
     ax.plot(daily["일"], daily["합계"], marker="o")
     ax.set_xticks(daily["일"])
-    ax.set_xticklabels(daily["일"].astype(str))
     ax.set_xlabel("일자")
     ax.set_ylabel("매출")
     st.pyplot(fig)
