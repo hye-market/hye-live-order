@@ -3,13 +3,15 @@ import pandas as pd
 import os
 from datetime import datetime
 import matplotlib.pyplot as plt
+from reportlab.platypus import SimpleDocTemplate, Table
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
 
 # ======================
-# 로그인 시스템
+# 로그인 (변경 완료)
 # ======================
 USERS = {
-    "admin": "1234",
-    "manager": "5678"
+    "HYE": "102018"
 }
 
 if "login" not in st.session_state:
@@ -48,7 +50,6 @@ h1,h2,h3 {color:white;}
 </style>
 """, unsafe_allow_html=True)
 
-# 로고 안전 처리 (오류 방지)
 try:
     st.image("hye_logo.png", width=200)
 except:
@@ -72,9 +73,6 @@ def load_data():
         return df.reindex(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-# ======================
-# 저장 + 자동백업
-# ======================
 def save_data(df):
     df.to_excel(DATA_FILE, index=False)
     backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -90,7 +88,7 @@ if os.path.exists(DATA_FILE):
         st.download_button("📥 엑셀 다운로드", f, file_name="HYE_DATA.xlsx")
 
 # ======================
-# 초기화 버튼
+# 초기화
 # ======================
 col1, col2 = st.columns(2)
 
@@ -115,19 +113,21 @@ with col2:
             st.rerun()
 
 # ======================
-# 주문 입력
+# 주문 입력 (버튼 오른쪽)
 # ======================
 st.subheader("주문 입력")
 
 with st.form("order_form", clear_on_submit=True):
-    c1,c2,c3,c4,c5 = st.columns(5)
+    c1,c2,c3,c4,c5,c6 = st.columns([1,1,1,1,1,1])
     date = c1.date_input("날짜", datetime.today())
     name = c2.text_input("고객명")
     product = c3.text_input("상품번호")
     qty = c4.number_input("수량", 1)
     price = c5.number_input("단가", 0)
 
-    if st.form_submit_button("주문 추가"):
+    submit = c6.form_submit_button("주문 추가")
+
+    if submit:
         new = pd.DataFrame([{
             "삭제": False,
             "날짜": str(date),
@@ -152,7 +152,6 @@ orders["합계"] = orders["수량"] * orders["단가"]
 # 고객 검색
 # ======================
 search = st.text_input("🔎 고객 검색")
-
 display = orders
 if search:
     display = orders[orders["고객명"].str.contains(search, na=False)]
@@ -163,7 +162,6 @@ st.subheader("📋 주문 리스트")
 
 edited = st.data_editor(display, use_container_width=True)
 
-# 단가 수정 시 합계 자동 재계산
 edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
 edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
@@ -172,48 +170,45 @@ if not edited[COLUMNS].equals(display[COLUMNS]):
     save_data(edited[COLUMNS])
     st.rerun()
 
-# 삭제 버튼
 if st.button("🗑 선택 삭제"):
     updated = edited[edited["삭제"] != True]
     save_data(updated[COLUMNS])
     st.rerun()
 
 # ======================
-# 고객별 묶음 합계
+# 고객별 정산서 PDF
 # ======================
-st.subheader("👥 고객별 묶음 합계")
-group = edited.groupby("고객명")["합계"].sum().reset_index()
-st.dataframe(group.sort_values(by="합계", ascending=False))
+st.subheader("📄 고객별 정산서")
+
+customer_list = edited["고객명"].unique()
+selected_customer = st.selectbox("고객 선택", customer_list)
+
+if selected_customer:
+    customer_data = edited[edited["고객명"] == selected_customer]
+    pdf_name = f"{selected_customer}_정산서.pdf"
+    doc = SimpleDocTemplate(pdf_name, pagesize=A4)
+    data = [["상품", "수량", "단가", "합계"]]
+
+    for _, row in customer_data.iterrows():
+        data.append([
+            row["상품번호"],
+            row["수량"],
+            row["단가"],
+            row["합계"]
+        ])
+
+    table = Table(data)
+    table.setStyle([
+        ('GRID',(0,0),(-1,-1),1,colors.black)
+    ])
+
+    doc.build([table])
+
+    with open(pdf_name, "rb") as f:
+        st.download_button("PDF 다운로드", f, file_name=pdf_name)
 
 # ======================
-# VIP 자동 분류
-# ======================
-st.subheader("💎 고객 등급")
-vip = edited.groupby("고객명")["합계"].sum().reset_index()
-vip["등급"] = vip["합계"].apply(lambda x: "💎 VIP" if x >= 1000000 else "🟢 일반")
-st.dataframe(vip.sort_values(by="합계", ascending=False))
-
-# ======================
-# 고객별 미입금
-# ======================
-st.subheader("⚠ 고객별 미입금")
-unpaid = edited[edited["입금여부"]==False].groupby("고객명")["합계"].sum().reset_index()
-st.dataframe(unpaid.sort_values(by="합계", ascending=False))
-
-# ======================
-# 정산 요약
-# ======================
-total = edited["합계"].sum()
-paid = edited[edited["입금여부"]==True]["합계"].sum()
-unpaid_total = edited[edited["입금여부"]==False]["합계"].sum()
-
-c1,c2,c3 = st.columns(3)
-c1.metric("총매출", f"{total:,.0f}원")
-c2.metric("입금액", f"{paid:,.0f}원")
-c3.metric("미입금", f"{unpaid_total:,.0f}원")
-
-# ======================
-# 이번달 일별 매출 차트
+# 일별 매출 (일자 정상화)
 # ======================
 st.subheader("📊 이번달 일별 매출")
 
@@ -231,6 +226,7 @@ if not month_data.empty:
 
     plt.figure()
     plt.plot(daily["일"], daily["합계"], marker="o")
-    plt.xlabel("일")
+    plt.xticks(range(1,32))
+    plt.xlabel("일자")
     plt.ylabel("매출")
     st.pyplot(plt)
