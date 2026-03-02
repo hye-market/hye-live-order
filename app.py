@@ -6,12 +6,12 @@ import matplotlib.pyplot as plt
 from reportlab.platypus import SimpleDocTemplate, Table
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
 # ======================
-# 로그인 (유지)
+# 로그인 (그대로 유지)
 # ======================
 USERS = {"HYE": "102108"}
 
@@ -41,7 +41,7 @@ BASE_COLUMNS = [
 ]
 
 # ======================
-# 데이터 로드/저장 (유지)
+# 데이터 로드
 # ======================
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -62,13 +62,11 @@ orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 orders["합계"] = orders["수량"] * orders["단가"]
 
 # ======================
-# 리스트 (🔥 위치만 교체)
+# 리스트 (현재 화면 유지 상태 그대로)
 # ======================
-display = orders.copy()
-
-display = display[[
+display = orders[[
     "삭제","날짜","고객명","상품번호",
-    "수량","단가","합계","입금여부"  # ← 여기만 위치 변경
+    "수량","단가","합계","입금여부"
 ]]
 
 st.subheader("📋 주문 리스트")
@@ -79,28 +77,22 @@ edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
 
 # ======================
-# 🔥 PDF 한글 완전 해결
+# 🔥 고객 정산서 (완전 정상 + 한글 100% 해결)
 # ======================
 st.subheader("📄 고객 정산서")
 
-if not edited.empty:
-    customer_list = edited["고객명"].dropna().unique()
+if not orders.empty:
+    customer_list = orders["고객명"].dropna().unique()
     selected_customer = st.selectbox("고객 선택", customer_list)
 
     if st.button("정산서 PDF 생성"):
 
-        # 한글 폰트 등록
-        font_path = "NanumGothic.ttf"
+        pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
 
-        if not os.path.exists(font_path):
-            st.error("NanumGothic.ttf 파일을 GitHub에 업로드해주세요.")
-            st.stop()
+        data = orders[orders["고객명"] == selected_customer].copy()
 
-        pdfmetrics.registerFont(TTFont("Nanum", font_path))
-
-        data = edited[edited["고객명"] == selected_customer].copy()
         pdf_columns = ["날짜","상품번호","수량","단가","합계","입금여부"]
-        data = data[pdf_columns]
+        data = data[pdf_columns].astype(str)
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -110,7 +102,7 @@ if not edited.empty:
         table = Table(table_data)
         table.setStyle([
             ("GRID",(0,0),(-1,-1),1,colors.black),
-            ("FONTNAME",(0,0),(-1,-1),"Nanum"),
+            ("FONTNAME",(0,0),(-1,-1),'HYSMyeongJo-Medium'),
             ("FONTSIZE",(0,0),(-1,-1),9),
             ("BACKGROUND",(0,0),(-1,0),colors.lightgrey)
         ])
