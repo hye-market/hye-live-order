@@ -30,7 +30,7 @@ if not st.session_state.login:
     st.stop()
 
 # ======================
-# 브랜드 UI
+# 기본 설정
 # ======================
 st.set_page_config(page_title="HYE LIVE ORDER", layout="wide")
 
@@ -48,8 +48,11 @@ h1,h2,h3 {color:white;}
 </style>
 """, unsafe_allow_html=True)
 
-if os.path.exists("hye_logo.png"):
+# 로고 안전 처리 (오류 방지)
+try:
     st.image("hye_logo.png", width=200)
+except:
+    pass
 
 st.title("💎 HYE LIVE ORDER SYSTEM")
 
@@ -160,7 +163,7 @@ st.subheader("📋 주문 리스트")
 
 edited = st.data_editor(display, use_container_width=True)
 
-# 합계 재계산 (단가 수정시 바로 반영)
+# 단가 수정 시 합계 자동 재계산
 edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
 edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
@@ -169,7 +172,7 @@ if not edited[COLUMNS].equals(display[COLUMNS]):
     save_data(edited[COLUMNS])
     st.rerun()
 
-# 삭제
+# 삭제 버튼
 if st.button("🗑 선택 삭제"):
     updated = edited[edited["삭제"] != True]
     save_data(updated[COLUMNS])
