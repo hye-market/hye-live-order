@@ -12,7 +12,7 @@ from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
 # =========================
-# 로그인 (그대로 유지)
+# 로그인 (유지)
 # =========================
 USERS = {"HYE": "102108"}
 
@@ -56,21 +56,36 @@ orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 orders["입금여부"] = orders["입금여부"].fillna(False)
 orders["합계"] = orders["수량"] * orders["단가"]
 
-# =========================
-# 상단 버튼 (그대로 유지)
-# =========================
-col1, col2, col3 = st.columns(3)
+# =====================================================
+# ✅ 상단 버튼 (엑셀 → 초기화 → 월초기화 순서 복구)
+# =====================================================
+top1, top2, top3 = st.columns(3)
 
-with col1:
-    pass
+with top1:
+    excel_buffer = BytesIO()
+    # 현재 화면 기준 정렬 유지
+    temp_display = orders.sort_values(by=["고객명","날짜"])
+    temp_display["합계"] = temp_display["수량"] * temp_display["단가"]
+    temp_display = temp_display[
+        ["삭제","날짜","고객명","상품번호",
+         "수량","단가","합계","입금여부"]
+    ]
+    temp_display.to_excel(excel_buffer, index=False)
 
-with col2:
+    st.download_button(
+        "📥 엑셀 다운로드",
+        data=excel_buffer.getvalue(),
+        file_name="HYE_DATA.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+with top2:
     if st.button("🧹 초기화"):
         if os.path.exists(DATA_FILE):
             os.remove(DATA_FILE)
         st.rerun()
 
-with col3:
+with top3:
     if st.button("📅 이번달월초기화"):
         orders["날짜"] = pd.to_datetime(orders["날짜"], errors="coerce")
         today = datetime.today()
@@ -82,7 +97,7 @@ with col3:
         st.rerun()
 
 # =========================
-# 주문 입력 (년도 2자리 수정)
+# 주문 입력 (그대로 유지)
 # =========================
 with st.container(border=True):
     st.subheader("📝 주문 입력")
@@ -100,7 +115,7 @@ with st.container(border=True):
         submit = c7.form_submit_button("주문 추가")
 
         if submit and name:
-            short_date = date.strftime("%y-%m-%d")  # ✅ 26-03-02 형식
+            short_date = date.strftime("%y-%m-%d")
             new = pd.DataFrame([{
                 "삭제":False,
                 "날짜":short_date,
@@ -115,24 +130,21 @@ with st.container(border=True):
             st.rerun()
 
 # =========================
-# 리스트
+# 주문 리스트 (그대로 유지)
 # =========================
 display = orders.sort_values(by=["고객명","날짜"])
 display["합계"] = display["수량"] * display["단가"]
 
 st.subheader("📋 주문 리스트")
 
-# ✅ 컬럼 순서 변경 (합계 → 입금여부)
 display = display[
     ["삭제","날짜","고객명","상품번호",
      "수량","단가","합계","입금여부"]
 ]
 
 edited = st.data_editor(display, use_container_width=True)
-
 edited["합계"] = edited["수량"] * edited["단가"]
 
-# 삭제 유지
 if st.button("🗑 선택 삭제"):
     edited = edited[edited["삭제"] == False]
     save_data(edited[BASE_COLUMNS])
@@ -141,17 +153,7 @@ if st.button("🗑 선택 삭제"):
 save_data(edited[BASE_COLUMNS])
 
 # =========================
-# 엑셀 다운로드 (현재 리스트 순서 그대로)
-# =========================
-excel_buffer = BytesIO()
-edited.to_excel(excel_buffer, index=False)
-st.download_button("📥 엑셀 다운로드",
-                   data=excel_buffer.getvalue(),
-                   file_name="HYE_DATA.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# =========================
-# 고객별 묶음 / 등급 / 미입금 / 요약 (전부 그대로 유지)
+# 고객묶음 / 등급 / 미입금 / 요약 (전부 유지)
 # =========================
 st.subheader("👥 고객별 묶음 합계")
 group = edited.groupby("고객명")["합계"].sum().reset_index()
