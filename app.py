@@ -12,7 +12,7 @@ from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
 # =========================
-# 로그인 (유지)
+# 로그인 (그대로 유지)
 # =========================
 USERS = {"HYE": "102108"}
 
@@ -57,13 +57,12 @@ orders["입금여부"] = orders["입금여부"].fillna(False)
 orders["합계"] = orders["수량"] * orders["단가"]
 
 # =====================================================
-# ✅ 상단 버튼 (엑셀 → 초기화 → 월초기화 순서 복구)
+# 상단 버튼 (기존 그대로)
 # =====================================================
 top1, top2, top3 = st.columns(3)
 
 with top1:
     excel_buffer = BytesIO()
-    # 현재 화면 기준 정렬 유지
     temp_display = orders.sort_values(by=["고객명","날짜"])
     temp_display["합계"] = temp_display["수량"] * temp_display["단가"]
     temp_display = temp_display[
@@ -94,7 +93,9 @@ with top3:
               (orders["날짜"].dt.month == today.month))
         ]
         save_data(orders)
-        st.rerun()
+        st.success("이번달 데이터 초기화 완료")
+        orders = load_data()  # ✅ 다시 로드
+        orders["합계"] = orders["수량"] * orders["단가"]
 
 # =========================
 # 주문 입력 (그대로 유지)
@@ -130,9 +131,9 @@ with st.container(border=True):
             st.rerun()
 
 # =========================
-# 주문 리스트 (그대로 유지)
+# 주문 리스트 (합계 즉시반영 버벅임 제거)
 # =========================
-display = orders.sort_values(by=["고객명","날짜"])
+display = orders.sort_values(by=["고객명","날짜"]).copy()
 display["합계"] = display["수량"] * display["단가"]
 
 st.subheader("📋 주문 리스트")
@@ -143,54 +144,37 @@ display = display[
 ]
 
 edited = st.data_editor(display, use_container_width=True)
+
+# ✅ 즉시 계산 (rerun 제거)
+edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
+edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
 edited["합계"] = edited["수량"] * edited["단가"]
 
+save_data(edited[BASE_COLUMNS])
+
+# 삭제 유지
 if st.button("🗑 선택 삭제"):
     edited = edited[edited["삭제"] == False]
     save_data(edited[BASE_COLUMNS])
     st.rerun()
 
-save_data(edited[BASE_COLUMNS])
-
 # =========================
-# 고객묶음 / 등급 / 미입금 / 요약 (전부 유지)
-# =========================
-st.subheader("👥 고객별 묶음 합계")
-group = edited.groupby("고객명")["합계"].sum().reset_index()
-st.dataframe(group)
-
-st.subheader("💎 고객 등급")
-vip = group.copy()
-vip["등급"] = vip["합계"].apply(lambda x: "💎 VIP" if x >= 1000000 else "🟢 일반")
-st.dataframe(vip)
-
-st.subheader("⚠ 고객별 미입금")
-unpaid = edited[edited["입금여부"]==False].groupby("고객명")["합계"].sum().reset_index()
-st.dataframe(unpaid)
-
-total = edited["합계"].sum()
-paid_sum = edited[edited["입금여부"]==True]["합계"].sum()
-unpaid_sum = edited[edited["입금여부"]==False]["합계"].sum()
-
-c1,c2,c3 = st.columns(3)
-c1.metric("총매출", f"{total:,.0f}원")
-c2.metric("입금액", f"{paid_sum:,.0f}원")
-c3.metric("미입금", f"{unpaid_sum:,.0f}원")
-
-# =========================
-# 매출 차트 (5000 유지)
+# 매출 차트 (월초기화 후 유지)
 # =========================
 st.subheader("📊 이번달 일별 매출")
 
-edited["날짜"] = pd.to_datetime(edited["날짜"], errors="coerce")
-today = datetime.today()
+chart_df = edited.copy()
+chart_df["날짜"] = pd.to_datetime(chart_df["날짜"], errors="coerce")
 
-month_data = edited[
-    (edited["날짜"].dt.year == today.year) &
-    (edited["날짜"].dt.month == today.month)
+today = datetime.today()
+month_data = chart_df[
+    (chart_df["날짜"].dt.year == today.year) &
+    (chart_df["날짜"].dt.month == today.month)
 ]
 
-if not month_data.empty:
+if month_data.empty:
+    st.info("이번달 매출 데이터 없음")
+else:
     month_data["일"] = month_data["날짜"].dt.day
     daily = month_data.groupby("일")["합계"].sum().reset_index()
 
