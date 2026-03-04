@@ -13,10 +13,8 @@ st.set_page_config(layout="wide")
 FILE = "orders.xlsx"
 
 
-# -----------------------------
-# 데이터 로드
-# -----------------------------
 def load():
+
     if os.path.exists(FILE):
         return pd.read_excel(FILE)
 
@@ -38,25 +36,30 @@ orders["합계"] = orders["수량"] * orders["단가"]
 
 st.title("HYE LIVE ORDER SYSTEM")
 
-# -----------------------------
+
 # 상단 버튼
-# -----------------------------
 c1, c2, c3 = st.columns(3)
 
 with c1:
+
     buf = BytesIO()
     orders.to_excel(buf, index=False)
+
     st.download_button("엑셀다운", buf.getvalue(), "orders.xlsx")
 
 with c2:
+
     if st.button("초기화"):
         orders = orders.iloc[0:0]
         save(orders)
         st.rerun()
 
 with c3:
+
     if st.button("월초기화"):
+
         today = datetime.today()
+
         orders["날짜"] = pd.to_datetime(orders["날짜"])
 
         orders = orders[
@@ -67,9 +70,8 @@ with c3:
         save(orders)
         st.rerun()
 
-# -----------------------------
+
 # 매출 요약
-# -----------------------------
 total = orders["합계"].sum()
 paid = orders[orders["입금여부"] == True]["합계"].sum()
 unpaid = orders[orders["입금여부"] == False]["합계"].sum()
@@ -80,9 +82,8 @@ m1.metric("총매출", f"{total:,.0f}")
 m2.metric("입금액", f"{paid:,.0f}")
 m3.metric("미입금", f"{unpaid:,.0f}")
 
-# -----------------------------
+
 # 주문 입력
-# -----------------------------
 st.subheader("주문입력")
 
 with st.form("order", clear_on_submit=True):
@@ -116,12 +117,41 @@ with st.form("order", clear_on_submit=True):
 
         st.rerun()
 
-# -----------------------------
-# 주문 리스트
-# -----------------------------
+
+# 전체 버튼
+b1, b2 = st.columns(2)
+
+with b1:
+
+    if st.button("전체입금"):
+        orders["입금여부"] = True
+        save(orders)
+        st.rerun()
+
+with b2:
+
+    if st.button("전체삭제"):
+        orders = orders.iloc[0:0]
+        save(orders)
+        st.rerun()
+
+
+# 고객 검색
+search = st.text_input("고객검색")
+
 display = orders.copy()
 
+if search:
+    display = display[display["고객명"].astype(str).str.contains(search)]
+
+# 고객명 정렬
+display = display.sort_values("고객명")
+
 display["합계"] = display["수량"] * display["단가"]
+
+
+# 주문 리스트
+st.subheader("주문리스트")
 
 edited = st.data_editor(
     display[["삭제", "날짜", "고객명", "상품번호", "수량", "단가", "합계", "입금여부"]],
@@ -133,16 +163,24 @@ edited["합계"] = edited["수량"] * edited["단가"]
 
 save(edited.drop(columns="합계"))
 
-# -----------------------------
+
+# 선택 삭제
+if st.button("선택삭제"):
+
+    edited = edited[edited["삭제"] == False]
+
+    save(edited.drop(columns="합계"))
+
+    st.rerun()
+
+
 # 고객 정산서
-# -----------------------------
 st.subheader("고객정산서")
 
 customer = st.selectbox("고객명", edited["고객명"].unique())
 
 df = edited[edited["고객명"] == customer]
 
-# PDF 생성
 pdf_buffer = BytesIO()
 
 table_data = [df.columns.tolist()] + df.values.tolist()
@@ -151,7 +189,6 @@ doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
 
 doc.build([Table(table_data)])
 
-# 버튼 위치 (PDF 옆 엑셀)
 c1, c2 = st.columns(2)
 
 with c1:
@@ -162,9 +199,8 @@ with c2:
     df.to_excel(excel_buffer, index=False)
     st.download_button("고객 엑셀다운", excel_buffer.getvalue(), f"{customer}.xlsx")
 
-# -----------------------------
+
 # 고객별 미입금 / 합계
-# -----------------------------
 c1, c2 = st.columns(2)
 
 with c1:
@@ -177,9 +213,8 @@ with c2:
     group = edited.groupby("고객명")["합계"].sum()
     st.dataframe(group)
 
-# -----------------------------
+
 # VIP
-# -----------------------------
 st.subheader("고객 등급(50만원 이상)")
 
 vip = group.reset_index()
@@ -190,9 +225,8 @@ vip["등급"] = vip["합계"].apply(
 
 st.dataframe(vip)
 
-# -----------------------------
+
 # 이번달 일별 매출
-# -----------------------------
 st.subheader("이번달 일별 매출")
 
 chart = orders.copy()
@@ -210,15 +244,15 @@ chart["일"] = chart["날짜"].dt.day
 
 daily = chart.groupby("일")["합계"].sum()
 
-fig, ax = plt.subplots()
+if len(daily) > 0:
 
-ax.plot(daily.index, daily.values, marker="o")
+    fig, ax = plt.subplots()
 
-# 축 설정
-ax.set_xlabel("날짜")
-ax.set_ylabel("금액")
+    ax.plot(daily.index, daily.values, marker="o")
 
-# 만원 단위
-ax.yaxis.set_major_locator(MultipleLocator(10000))
+    ax.set_xlabel("날짜")
+    ax.set_ylabel("금액")
 
-st.pyplot(fig)
+    ax.yaxis.set_major_locator(MultipleLocator(10000))
+
+    st.pyplot(fig)
