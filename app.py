@@ -5,7 +5,15 @@ from datetime import datetime,date
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from reportlab.platypus import SimpleDocTemplate,Table
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
+
+# -----------------------
+# 한글폰트 등록 (PDF 깨짐 해결)
+# -----------------------
+
+pdfmetrics.registerFont(TTFont("Nanum","NanumGothic.ttf"))
 
 st.set_page_config(layout="wide")
 
@@ -21,6 +29,7 @@ def load():
     ])
 
 def save(df):
+
     df.to_excel(FILE,index=False)
 
 orders=load()
@@ -32,7 +41,10 @@ orders["합계"]=orders["수량"]*orders["단가"]
 
 st.title("HYE LIVE ORDER SYSTEM")
 
+# -----------------------
 # 상단
+# -----------------------
+
 c1,c2,c3=st.columns(3)
 
 with c1:
@@ -66,7 +78,9 @@ with c3:
 
         st.rerun()
 
+# -----------------------
 # 매출 요약
+# -----------------------
 
 total=orders["합계"].sum()
 paid=orders[orders["입금여부"]==True]["합계"].sum()
@@ -78,7 +92,9 @@ m1.metric("총매출",f"{total:,.0f}")
 m2.metric("입금액",f"{paid:,.0f}")
 m3.metric("미입금",f"{unpaid:,.0f}")
 
-# 주문입력
+# -----------------------
+# 주문 입력
+# -----------------------
 
 st.subheader("주문입력")
 
@@ -115,61 +131,27 @@ with st.form("order",clear_on_submit=True):
 
         st.rerun()
 
-# 전체 버튼
-
-b1,b2=st.columns(2)
-
-with b1:
-
-    if st.button("전체입금"):
-        orders["입금여부"]=True
-        save(orders)
-        st.rerun()
-
-with b2:
-
-    if st.button("전체삭제"):
-        orders=orders.iloc[0:0]
-        save(orders)
-        st.rerun()
-
-# 고객검색
-
-search=st.text_input("고객검색")
+# -----------------------
+# 주문 리스트
+# -----------------------
 
 display=orders.copy()
 
-if search:
-    display=display[display["고객명"].astype(str).str.contains(search)]
-
-display=display.sort_values("고객명")
-
 display["합계"]=display["수량"]*display["단가"]
-
-# 주문리스트
-
-st.subheader("주문리스트")
 
 edited=st.data_editor(
 display[["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]],
 use_container_width=True
 )
 
+# 엔터 입력 후 합계 자동 계산
 edited["합계"]=edited["수량"]*edited["단가"]
 
 save(edited.drop(columns="합계"))
 
-# 선택삭제
-
-if st.button("선택삭제"):
-
-    edited=edited[edited["삭제"]==False]
-
-    save(edited.drop(columns="합계"))
-
-    st.rerun()
-
-# 고객정산서
+# -----------------------
+# 고객 정산서
+# -----------------------
 
 st.subheader("고객정산서")
 
@@ -187,47 +169,25 @@ doc=SimpleDocTemplate(pdf)
 
 doc.build([Table(table_data)])
 
-st.download_button("PDF다운",pdf.getvalue(),f"{customer}.pdf")
-
-# 고객 엑셀다운
-
-excel=BytesIO()
-
-df.to_excel(excel,index=False)
-
-st.download_button("고객 엑셀다운",excel.getvalue(),f"{customer}.xlsx")
-
-# 고객별 미입금 / 합계
+# 버튼 위치 수정
 
 c1,c2=st.columns(2)
 
 with c1:
 
-    st.subheader("고객별 미입금")
-
-    unpaid_df=edited[edited["입금여부"]==False]
-
-    st.dataframe(unpaid_df.groupby("고객명")["합계"].sum())
+    st.download_button("PDF다운",pdf.getvalue(),f"{customer}.pdf")
 
 with c2:
 
-    st.subheader("고객별 합계")
+    excel=BytesIO()
 
-    group=edited.groupby("고객명")["합계"].sum()
+    df.to_excel(excel,index=False)
 
-    st.dataframe(group)
+    st.download_button("고객 엑셀다운",excel.getvalue(),f"{customer}.xlsx")
 
-# VIP
-
-st.subheader("고객 등급(50만원 이상)")
-
-vip=group.reset_index()
-
-vip["등급"]=vip["합계"].apply(lambda x:"👑VIP" if x>=500000 else "일반")
-
-st.dataframe(vip)
-
+# -----------------------
 # 일별 매출
+# -----------------------
 
 st.subheader("이번달 일별 매출")
 
@@ -250,7 +210,9 @@ fig,ax=plt.subplots()
 
 ax.plot(daily.index,daily.values,marker="o")
 
-ax.set_xlabel("일")
+# 축 설정 수정
+ax.set_xlabel("날짜")
+ax.set_ylabel("금액")
 
 ax.yaxis.set_major_locator(MultipleLocator(10000))
 
