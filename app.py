@@ -1,219 +1,224 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime,date
+from datetime import datetime, date
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
-from reportlab.platypus import SimpleDocTemplate,Table
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Table
+from reportlab.lib.pagesizes import A4
 from io import BytesIO
-
-# -----------------------
-# 한글폰트 등록 (PDF 깨짐 해결)
-# -----------------------
-
-pdfmetrics.registerFont(TTFont("Nanum","NanumGothic.ttf"))
 
 st.set_page_config(layout="wide")
 
-FILE="orders.xlsx"
+FILE = "orders.xlsx"
 
+
+# -----------------------------
+# 데이터 로드
+# -----------------------------
 def load():
-
     if os.path.exists(FILE):
         return pd.read_excel(FILE)
 
     return pd.DataFrame(columns=[
-    "삭제","날짜","고객명","상품번호","수량","단가","입금여부"
+        "삭제", "날짜", "고객명", "상품번호", "수량", "단가", "입금여부"
     ])
 
+
 def save(df):
+    df.to_excel(FILE, index=False)
 
-    df.to_excel(FILE,index=False)
 
-orders=load()
+orders = load()
 
-orders["수량"]=pd.to_numeric(orders["수량"],errors="coerce").fillna(0)
-orders["단가"]=pd.to_numeric(orders["단가"],errors="coerce").fillna(0)
+orders["수량"] = pd.to_numeric(orders["수량"], errors="coerce").fillna(0)
+orders["단가"] = pd.to_numeric(orders["단가"], errors="coerce").fillna(0)
 
-orders["합계"]=orders["수량"]*orders["단가"]
+orders["합계"] = orders["수량"] * orders["단가"]
 
 st.title("HYE LIVE ORDER SYSTEM")
 
-# -----------------------
-# 상단
-# -----------------------
-
-c1,c2,c3=st.columns(3)
+# -----------------------------
+# 상단 버튼
+# -----------------------------
+c1, c2, c3 = st.columns(3)
 
 with c1:
-
-    buf=BytesIO()
-    orders.to_excel(buf,index=False)
-
-    st.download_button("엑셀다운",buf.getvalue(),"orders.xlsx")
+    buf = BytesIO()
+    orders.to_excel(buf, index=False)
+    st.download_button("엑셀다운", buf.getvalue(), "orders.xlsx")
 
 with c2:
-
     if st.button("초기화"):
-        orders=orders.iloc[0:0]
+        orders = orders.iloc[0:0]
         save(orders)
         st.rerun()
 
 with c3:
-
     if st.button("월초기화"):
+        today = datetime.today()
+        orders["날짜"] = pd.to_datetime(orders["날짜"])
 
-        today=datetime.today()
-
-        orders["날짜"]=pd.to_datetime(orders["날짜"])
-
-        orders=orders[
-        ~((orders["날짜"].dt.year==today.year)&
-        (orders["날짜"].dt.month==today.month))
+        orders = orders[
+            ~((orders["날짜"].dt.year == today.year) &
+              (orders["날짜"].dt.month == today.month))
         ]
 
         save(orders)
-
         st.rerun()
 
-# -----------------------
+# -----------------------------
 # 매출 요약
-# -----------------------
+# -----------------------------
+total = orders["합계"].sum()
+paid = orders[orders["입금여부"] == True]["합계"].sum()
+unpaid = orders[orders["입금여부"] == False]["합계"].sum()
 
-total=orders["합계"].sum()
-paid=orders[orders["입금여부"]==True]["합계"].sum()
-unpaid=orders[orders["입금여부"]==False]["합계"].sum()
+m1, m2, m3 = st.columns(3)
 
-m1,m2,m3=st.columns(3)
+m1.metric("총매출", f"{total:,.0f}")
+m2.metric("입금액", f"{paid:,.0f}")
+m3.metric("미입금", f"{unpaid:,.0f}")
 
-m1.metric("총매출",f"{total:,.0f}")
-m2.metric("입금액",f"{paid:,.0f}")
-m3.metric("미입금",f"{unpaid:,.0f}")
-
-# -----------------------
+# -----------------------------
 # 주문 입력
-# -----------------------
-
+# -----------------------------
 st.subheader("주문입력")
 
-with st.form("order",clear_on_submit=True):
+with st.form("order", clear_on_submit=True):
 
-    c1,c2,c3,c4,c5,c6,c7=st.columns(7)
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 
-    d=c1.date_input("날짜",date.today())
-    name=c2.text_input("고객명")
-    product=c3.text_input("상품번호")
-    qty=c4.number_input("수량",1)
-    price=c5.number_input("단가",0)
-    paid=c6.checkbox("입금완료")
+    d = c1.date_input("날짜", date.today())
+    name = c2.text_input("고객명")
+    product = c3.text_input("상품번호")
+    qty = c4.number_input("수량", 1)
+    price = c5.number_input("단가", 0)
+    paid = c6.checkbox("입금완료")
 
-    submit=c7.form_submit_button("엔터주문추가")
+    submit = c7.form_submit_button("엔터주문추가")
 
     if submit and name:
 
-        new=pd.DataFrame([{
-
-        "삭제":False,
-        "날짜":d.strftime("%y-%m-%d"),
-        "고객명":name,
-        "상품번호":product,
-        "수량":qty,
-        "단가":price,
-        "입금여부":paid
-
+        new = pd.DataFrame([{
+            "삭제": False,
+            "날짜": d.strftime("%y-%m-%d"),
+            "고객명": name,
+            "상품번호": product,
+            "수량": qty,
+            "단가": price,
+            "입금여부": paid
         }])
 
-        orders=pd.concat([orders,new],ignore_index=True)
+        orders = pd.concat([orders, new], ignore_index=True)
 
         save(orders)
 
         st.rerun()
 
-# -----------------------
+# -----------------------------
 # 주문 리스트
-# -----------------------
+# -----------------------------
+display = orders.copy()
 
-display=orders.copy()
+display["합계"] = display["수량"] * display["단가"]
 
-display["합계"]=display["수량"]*display["단가"]
-
-edited=st.data_editor(
-display[["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]],
-use_container_width=True
+edited = st.data_editor(
+    display[["삭제", "날짜", "고객명", "상품번호", "수량", "단가", "합계", "입금여부"]],
+    use_container_width=True
 )
 
-# 엔터 입력 후 합계 자동 계산
-edited["합계"]=edited["수량"]*edited["단가"]
+# 합계 자동 계산
+edited["합계"] = edited["수량"] * edited["단가"]
 
 save(edited.drop(columns="합계"))
 
-# -----------------------
+# -----------------------------
 # 고객 정산서
-# -----------------------
-
+# -----------------------------
 st.subheader("고객정산서")
 
-customer=st.selectbox("고객명",edited["고객명"].unique())
+customer = st.selectbox("고객명", edited["고객명"].unique())
 
-df=edited[edited["고객명"]==customer]
+df = edited[edited["고객명"] == customer]
 
-# PDF
+# PDF 생성
+pdf_buffer = BytesIO()
 
-pdf=BytesIO()
+table_data = [df.columns.tolist()] + df.values.tolist()
 
-table_data=[df.columns.tolist()]+df.values.tolist()
-
-doc=SimpleDocTemplate(pdf)
+doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
 
 doc.build([Table(table_data)])
 
-# 버튼 위치 수정
-
-c1,c2=st.columns(2)
+# 버튼 위치 (PDF 옆 엑셀)
+c1, c2 = st.columns(2)
 
 with c1:
-
-    st.download_button("PDF다운",pdf.getvalue(),f"{customer}.pdf")
+    st.download_button("PDF다운", pdf_buffer.getvalue(), f"{customer}.pdf")
 
 with c2:
+    excel_buffer = BytesIO()
+    df.to_excel(excel_buffer, index=False)
+    st.download_button("고객 엑셀다운", excel_buffer.getvalue(), f"{customer}.xlsx")
 
-    excel=BytesIO()
+# -----------------------------
+# 고객별 미입금 / 합계
+# -----------------------------
+c1, c2 = st.columns(2)
 
-    df.to_excel(excel,index=False)
+with c1:
+    st.subheader("고객별 미입금")
+    unpaid_df = edited[edited["입금여부"] == False]
+    st.dataframe(unpaid_df.groupby("고객명")["합계"].sum())
 
-    st.download_button("고객 엑셀다운",excel.getvalue(),f"{customer}.xlsx")
+with c2:
+    st.subheader("고객별 합계")
+    group = edited.groupby("고객명")["합계"].sum()
+    st.dataframe(group)
 
-# -----------------------
-# 일별 매출
-# -----------------------
+# -----------------------------
+# VIP
+# -----------------------------
+st.subheader("고객 등급(50만원 이상)")
 
+vip = group.reset_index()
+
+vip["등급"] = vip["합계"].apply(
+    lambda x: "👑VIP" if x >= 500000 else "일반"
+)
+
+st.dataframe(vip)
+
+# -----------------------------
+# 이번달 일별 매출
+# -----------------------------
 st.subheader("이번달 일별 매출")
 
-chart=orders.copy()
+chart = orders.copy()
 
-chart["날짜"]=pd.to_datetime(chart["날짜"])
+chart["날짜"] = pd.to_datetime(chart["날짜"])
 
-today=datetime.today()
+today = datetime.today()
 
-chart=chart[
-(chart["날짜"].dt.year==today.year)&
-(chart["날짜"].dt.month==today.month)
+chart = chart[
+    (chart["날짜"].dt.year == today.year) &
+    (chart["날짜"].dt.month == today.month)
 ]
 
-chart["일"]=chart["날짜"].dt.day
+chart["일"] = chart["날짜"].dt.day
 
-daily=chart.groupby("일")["합계"].sum()
+daily = chart.groupby("일")["합계"].sum()
 
-fig,ax=plt.subplots()
+fig, ax = plt.subplots()
 
-ax.plot(daily.index,daily.values,marker="o")
+ax.plot(daily.index, daily.values, marker="o")
 
-# 축 설정 수정
+# 축 설정
 ax.set_xlabel("날짜")
 ax.set_ylabel("금액")
 
+# 만원 단위
 ax.yaxis.set_major_locator(MultipleLocator(10000))
 
 st.pyplot(fig)
