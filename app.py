@@ -5,90 +5,137 @@ from datetime import datetime, date
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Table
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfbase import pdfmetrics
+import time
 
 st.set_page_config(layout="wide")
 
-DATA_FILE = "orders_data.xlsx"
+DATA_FILE="orders.xlsx"
+
+# 로그인 유지
+SESSION_LIMIT=60*60*24
+
+if "login_time" not in st.session_state:
+    st.session_state.login_time=0
+
+if "login" not in st.session_state:
+    st.session_state.login=False
+
+if time.time()-st.session_state.login_time>SESSION_LIMIT:
+    st.session_state.login=False
+
+if not st.session_state.login:
+
+    st.title("HYE ERP 로그인")
+
+    id=st.text_input("아이디")
+    pw=st.text_input("비밀번호",type="password")
+
+    if st.button("로그인"):
+        if id=="HYE" and pw=="102108":
+            st.session_state.login=True
+            st.session_state.login_time=time.time()
+            st.rerun()
+
+    st.stop()
 
 # 데이터 로드
-def load_data():
+def load():
+
     if os.path.exists(DATA_FILE):
         return pd.read_excel(DATA_FILE)
-    return pd.DataFrame(columns=["삭제","날짜","고객명","상품번호","수량","단가","입금여부"])
 
-def save_data(df):
+    return pd.DataFrame(columns=[
+        "삭제","날짜","고객명","상품번호",
+        "수량","단가","입금여부"
+    ])
+
+def save(df):
     df.to_excel(DATA_FILE,index=False)
 
-orders = load_data()
+orders=load()
+
 orders["수량"]=pd.to_numeric(orders["수량"],errors="coerce").fillna(0)
 orders["단가"]=pd.to_numeric(orders["단가"],errors="coerce").fillna(0)
+
 orders["합계"]=orders["수량"]*orders["단가"]
 
-st.title("💎 HYE LIVE ORDER SYSTEM")
+st.title("HYE LIVE ORDER ERP")
 
-# =========================
-# 1 상단 버튼
-# =========================
+# 상단 버튼
 c1,c2,c3=st.columns(3)
 
 with c1:
-    excel_buffer=BytesIO()
-    orders.to_excel(excel_buffer,index=False)
+
+    buffer=BytesIO()
+
+    orders.to_excel(buffer,index=False)
 
     st.download_button(
-        "엑셀다운로드",
-        excel_buffer.getvalue(),
-        file_name="orders.xlsx"
+        "엑셀다운",
+        buffer.getvalue(),
+        "orders.xlsx"
     )
 
 with c2:
+
     if st.button("초기화"):
-        if os.path.exists(DATA_FILE):
-            os.remove(DATA_FILE)
+        orders=orders.iloc[0:0]
+        save(orders)
         st.rerun()
 
 with c3:
+
     if st.button("월초기화"):
+
         today=datetime.today()
-        orders["날짜"]=pd.to_datetime(orders["날짜"],errors="coerce")
+
+        orders["날짜"]=pd.to_datetime(
+            orders["날짜"],
+            errors="coerce"
+        )
+
         orders=orders[
-            ~((orders["날짜"].dt.year==today.year)&
-              (orders["날짜"].dt.month==today.month))
+            ~(
+                (orders["날짜"].dt.year==today.year)
+                &
+                (orders["날짜"].dt.month==today.month)
+            )
         ]
-        save_data(orders)
+
+        save(orders)
+
         st.rerun()
 
-# =========================
-# 2 매출 요약
-# =========================
+# 매출 요약
 total=orders["합계"].sum()
+
 paid=orders[orders["입금여부"]==True]["합계"].sum()
+
 unpaid=orders[orders["입금여부"]==False]["합계"].sum()
 
-s1,s2,s3=st.columns(3)
-s1.metric("총매출액",f"{total:,.0f}")
-s2.metric("입금액",f"{paid:,.0f}")
-s3.metric("미입금",f"{unpaid:,.0f}")
+m1,m2,m3=st.columns(3)
 
-# =========================
-# 3 주문 입력
-# =========================
+m1.metric("총매출",total)
+m2.metric("입금액",paid)
+m3.metric("미입금",unpaid)
+
+# 주문 입력
 st.subheader("주문입력")
 
-with st.form("order_form",clear_on_submit=True):
+with st.form("order",clear_on_submit=True):
 
     c1,c2,c3,c4,c5,c6,c7=st.columns(7)
 
-    order_date=c1.date_input("날짜",value=date.today())
+    d=c1.date_input("날짜",date.today())
+
     name=c2.text_input("고객명")
-    product=c3.text_input("상품번호")
-    qty=c4.number_input("수량",min_value=1,value=1)
-    price=c5.number_input("단가",min_value=0,value=0)
+
+    p=c3.text_input("상품번호")
+
+    q=c4.number_input("수량",1)
+
+    price=c5.number_input("단가",0)
+
     paid=c6.checkbox("입금완료")
 
     submit=c7.form_submit_button("주문추가")
@@ -96,145 +143,102 @@ with st.form("order_form",clear_on_submit=True):
     if submit and name:
 
         new=pd.DataFrame([{
+
             "삭제":False,
-            "날짜":order_date.strftime("%y-%m-%d"),
+
+            "날짜":d.strftime("%y-%m-%d"),
+
             "고객명":name,
-            "상품번호":product,
-            "수량":qty,
+
+            "상품번호":p,
+
+            "수량":q,
+
             "단가":price,
+
             "입금여부":paid
+
         }])
 
         orders=pd.concat([orders,new],ignore_index=True)
-        save_data(orders)
+
+        save(orders)
+
         st.rerun()
 
-# =========================
-# 4 고객 검색
-# =========================
+# 검색
 search=st.text_input("고객검색")
 
 display=orders.copy()
 
 if search:
-    display=display[display["고객명"].str.contains(search,na=False)]
+    display=display[display["고객명"].str.contains(search)]
 
 display["합계"]=display["수량"]*display["단가"]
 
-# =========================
-# 5 주문 리스트
-# =========================
+# 리스트
 st.subheader("주문리스트")
 
-display=display[
-["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]
-]
+edited=st.data_editor(
 
-edited=st.data_editor(display,use_container_width=True)
+    display[
+        ["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]
+    ],
+
+    use_container_width=True
+)
 
 edited["합계"]=edited["수량"]*edited["단가"]
 
-save_data(edited.drop(columns="합계"))
+save(edited.drop(columns="합계"))
 
-# =========================
-# 6 선택삭제
-# =========================
+# 선택삭제
 if st.button("선택삭제"):
+
     edited=edited[edited["삭제"]==False]
-    save_data(edited.drop(columns="합계"))
+
+    save(edited.drop(columns="합계"))
+
     st.rerun()
 
-# =========================
-# 7 고객정산서
-# =========================
-st.subheader("고객정산서")
+# 고객 합계
+group=edited.groupby("고객명")["합계"].sum().reset_index()
 
-if not edited.empty:
+st.subheader("고객별 합계")
 
-    customer=st.selectbox("고객명",edited["고객명"].unique())
+st.dataframe(group)
 
-    if st.button("PDF다운"):
+# VIP
+vip=group.copy()
 
-        pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
+vip["등급"]=vip["합계"].apply(
+    lambda x:"VIP" if x>=500000 else "일반"
+)
 
-        data=edited[edited["고객명"]==customer]
-
-        buffer=BytesIO()
-
-        doc=SimpleDocTemplate(buffer,pagesize=A4)
-
-        table_data=[list(data.columns)]+data.astype(str).values.tolist()
-
-        table=Table(table_data)
-
-        table.setStyle([
-            ("GRID",(0,0),(-1,-1),1,colors.black),
-            ("FONTNAME",(0,0),(-1,-1),'HYSMyeongJo-Medium')
-        ])
-
-        doc.build([table])
-
-        st.download_button(
-            "정산서 다운로드",
-            buffer.getvalue(),
-            file_name=f"{customer}_정산서.pdf"
-        )
-
-# =========================
-# 8 고객 미입금 / 고객 합계
-# =========================
-col1,col2=st.columns(2)
-
-with col1:
-
-    st.subheader("고객별 미입금")
-
-    unpaid_df=edited[edited["입금여부"]==False]
-
-    unpaid_sum=unpaid_df.groupby("고객명")["합계"].sum().reset_index()
-
-    st.dataframe(unpaid_sum)
-
-with col2:
-
-    st.subheader("고객별 합계")
-
-    group_sum=edited.groupby("고객명")["합계"].sum().reset_index()
-
-    st.dataframe(group_sum)
-
-# =========================
-# 9 고객 등급
-# =========================
 st.subheader("고객 등급")
-
-vip=group_sum.copy()
-
-vip["등급"]=vip["합계"].apply(lambda x:"VIP" if x>=500000 else "일반")
 
 st.dataframe(vip)
 
-# =========================
-# 10 매출 그래프
-# =========================
+# 매출 그래프
 st.subheader("이번달 일별 매출")
 
-chart_df=edited.copy()
+chart=edited.copy()
 
-chart_df["날짜"]=pd.to_datetime(chart_df["날짜"],errors="coerce")
+chart["날짜"]=pd.to_datetime(chart["날짜"],errors="coerce")
 
 today=datetime.today()
 
-month_df=chart_df[
-(chart_df["날짜"].dt.year==today.year)&
-(chart_df["날짜"].dt.month==today.month)
+chart=chart[
+    (chart["날짜"].dt.year==today.year)
+    &
+    (chart["날짜"].dt.month==today.month)
 ]
 
-if not month_df.empty:
+if not chart.empty:
 
-    month_df["일"]=month_df["날짜"].dt.day
+    chart["일"]=chart["날짜"].dt.day
 
-    daily=month_df.groupby("일")["합계"].sum().reset_index()
+    daily=chart.groupby("일")["합계"].sum().reset_index()
 
     fig,ax=plt.subplots()
 
