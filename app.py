@@ -2,34 +2,30 @@ import streamlit as st
 import pandas as pd
 import os
 import time
-from datetime import datetime, date
+from datetime import datetime,date
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from io import BytesIO
 
 st.set_page_config(layout="wide")
 
-# --------------------------
-# 태블릿 UI
-# --------------------------
-
 st.markdown("""
 <style>
-button {
+button{
 height:45px;
 font-size:18px;
 }
-[data-testid="stDataFrame"] {
+[data-testid="stDataFrame"]{
 font-size:18px;
 }
 </style>
 """,unsafe_allow_html=True)
 
-# --------------------------
+# ------------------
 # 로그인 24시간 유지
-# --------------------------
+# ------------------
 
-SESSION_TIME=60*60*24
+SESSION=60*60*24
 
 if "login" not in st.session_state:
     st.session_state.login=False
@@ -37,12 +33,12 @@ if "login" not in st.session_state:
 if "login_time" not in st.session_state:
     st.session_state.login_time=0
 
-if time.time()-st.session_state.login_time>SESSION_TIME:
+if time.time()-st.session_state.login_time>SESSION:
     st.session_state.login=False
 
 if not st.session_state.login:
 
-    st.title("HYE ERP 로그인")
+    st.title("HYE ERP LOGIN")
 
     user=st.text_input("아이디")
     pw=st.text_input("비밀번호",type="password")
@@ -55,24 +51,24 @@ if not st.session_state.login:
 
     st.stop()
 
-# --------------------------
-# 데이터 로드
-# --------------------------
+# ------------------
+# 데이터
+# ------------------
 
-DATA_FILE="orders.xlsx"
+DATA="orders.xlsx"
 
 def load():
 
-    if os.path.exists(DATA_FILE):
-        return pd.read_excel(DATA_FILE)
+    if os.path.exists(DATA):
+        return pd.read_excel(DATA)
 
     return pd.DataFrame(columns=[
     "삭제","날짜","고객명","상품번호",
-    "수량","단가","입금여부","방송ID"
+    "수량","단가","입금여부"
     ])
 
 def save(df):
-    df.to_excel(DATA_FILE,index=False)
+    df.to_excel(DATA,index=False)
 
 orders=load()
 
@@ -83,19 +79,18 @@ orders["합계"]=orders["수량"]*orders["단가"]
 
 st.title("HYE LIVE ORDER SYSTEM")
 
-# --------------------------
+# ------------------
 # 상단 버튼
-# --------------------------
+# ------------------
 
 c1,c2,c3=st.columns(3)
 
 with c1:
 
-    buffer=BytesIO()
+    buf=BytesIO()
+    orders.to_excel(buf,index=False)
 
-    orders.to_excel(buffer,index=False)
-
-    st.download_button("엑셀다운",buffer.getvalue(),"orders.xlsx")
+    st.download_button("엑셀다운",buf.getvalue(),"orders.xlsx")
 
 with c2:
 
@@ -118,12 +113,11 @@ with c3:
         ]
 
         save(orders)
-
         st.rerun()
 
-# --------------------------
+# ------------------
 # 매출 요약
-# --------------------------
+# ------------------
 
 total=orders["합계"].sum()
 
@@ -137,15 +131,15 @@ m1.metric("총매출",f"{total:,.0f}")
 m2.metric("입금액",f"{paid:,.0f}")
 m3.metric("미입금",f"{unpaid:,.0f}")
 
-# --------------------------
+# ------------------
 # 주문 입력
-# --------------------------
+# ------------------
 
 st.subheader("주문입력")
 
 with st.form("order_form",clear_on_submit=True):
 
-    c1,c2,c3,c4,c5,c6,c7,c8=st.columns(8)
+    c1,c2,c3,c4,c5,c6=st.columns(6)
 
     d=c1.date_input("날짜",date.today())
 
@@ -159,9 +153,7 @@ with st.form("order_form",clear_on_submit=True):
 
     paid=c6.checkbox("입금완료")
 
-    broadcast=c7.text_input("방송ID")
-
-    submit=c8.form_submit_button("주문추가")
+    submit=st.form_submit_button("엔터로 주문추가")
 
     if submit and name:
 
@@ -173,8 +165,7 @@ with st.form("order_form",clear_on_submit=True):
         "상품번호":product,
         "수량":qty,
         "단가":price,
-        "입금여부":paid,
-        "방송ID":broadcast
+        "입금여부":paid
 
         }])
 
@@ -184,9 +175,9 @@ with st.form("order_form",clear_on_submit=True):
 
         st.rerun()
 
-# --------------------------
+# ------------------
 # 고객 검색
-# --------------------------
+# ------------------
 
 search=st.text_input("고객검색")
 
@@ -197,38 +188,14 @@ if search:
 
 display["합계"]=display["수량"]*display["단가"]
 
-# --------------------------
-# 리스트 전체 버튼
-# --------------------------
-
-b1,b2=st.columns(2)
-
-with b1:
-
-    if st.button("전체 입금"):
-        orders["입금여부"]=True
-        save(orders)
-        st.rerun()
-
-with b2:
-
-    if st.button("전체 삭제"):
-        orders=orders.iloc[0:0]
-        save(orders)
-        st.rerun()
-
-# --------------------------
+# ------------------
 # 주문 리스트
-# --------------------------
+# ------------------
 
 st.subheader("주문리스트")
 
 edited=st.data_editor(
-
-display[
-["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]
-],
-
+display[["삭제","날짜","고객명","상품번호","수량","단가","합계","입금여부"]],
 use_container_width=True
 )
 
@@ -236,9 +203,9 @@ edited["합계"]=edited["수량"]*edited["단가"]
 
 save(edited.drop(columns="합계"))
 
-# --------------------------
-# 선택 삭제
-# --------------------------
+# ------------------
+# 선택삭제
+# ------------------
 
 if st.button("선택삭제"):
 
@@ -248,23 +215,25 @@ if st.button("선택삭제"):
 
     st.rerun()
 
-# --------------------------
+# ------------------
 # 고객 정산서
-# --------------------------
+# ------------------
 
 st.subheader("고객정산서")
 
 customer=st.selectbox("고객명",edited["고객명"].unique())
 
-buffer=BytesIO()
+buf=BytesIO()
 
-edited[edited["고객명"]==customer].to_excel(buffer,index=False)
+edited[edited["고객명"]==customer].to_excel(buf,index=False)
 
-st.download_button("PDF다운",buffer.getvalue(),f"{customer}.xlsx")
+st.download_button("PDF다운",buf.getvalue(),f"{customer}.xlsx")
 
-# --------------------------
+st.download_button("고객 엑셀다운",buf.getvalue(),f"{customer}_orders.xlsx")
+
+# ------------------
 # 고객별 미입금 / 합계
-# --------------------------
+# ------------------
 
 c1,c2=st.columns(2)
 
@@ -284,31 +253,26 @@ with c2:
 
     st.dataframe(group)
 
-# --------------------------
+# ------------------
 # VIP
-# --------------------------
+# ------------------
 
-st.subheader("고객 등급")
+st.subheader("고객 등급(50만원 이상)")
 
 vip=group.reset_index()
 
 vip["등급"]=vip["합계"].apply(lambda x:"VIP" if x>=500000 else "일반")
 
-st.dataframe(vip)
+def highlight(row):
+    if row["등급"]=="VIP":
+        return ["background-color:#ffdddd"]*3
+    return [""]*3
 
-# --------------------------
-# 방송 매출
-# --------------------------
+st.dataframe(vip.style.apply(highlight,axis=1))
 
-st.subheader("방송별 매출")
-
-broadcast_sales=orders.groupby("방송ID")["합계"].sum()
-
-st.bar_chart(broadcast_sales)
-
-# --------------------------
+# ------------------
 # 일별 매출
-# --------------------------
+# ------------------
 
 st.subheader("이번달 일별 매출")
 
