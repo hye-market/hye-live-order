@@ -6,15 +6,23 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from reportlab.platypus import SimpleDocTemplate, Table
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 
 st.set_page_config(layout="wide")
 
 FILE = "orders.xlsx"
 
+# PDF 한글폰트
+if os.path.exists("NanumGothic.ttf"):
+    pdfmetrics.registerFont(TTFont("Nanum", "NanumGothic.ttf"))
+    FONT = "Nanum"
+else:
+    FONT = "Helvetica"
+
 
 def load():
-
     if os.path.exists(FILE):
         return pd.read_excel(FILE)
 
@@ -37,29 +45,23 @@ orders["합계"] = orders["수량"] * orders["단가"]
 st.title("HYE LIVE ORDER SYSTEM")
 
 
-# 상단 버튼
+# 상단버튼
 c1, c2, c3 = st.columns(3)
 
 with c1:
-
     buf = BytesIO()
     orders.to_excel(buf, index=False)
-
     st.download_button("엑셀다운", buf.getvalue(), "orders.xlsx")
 
 with c2:
-
     if st.button("초기화"):
         orders = orders.iloc[0:0]
         save(orders)
         st.rerun()
 
 with c3:
-
     if st.button("월초기화"):
-
         today = datetime.today()
-
         orders["날짜"] = pd.to_datetime(orders["날짜"])
 
         orders = orders[
@@ -71,7 +73,7 @@ with c3:
         st.rerun()
 
 
-# 매출 요약
+# 매출요약
 total = orders["합계"].sum()
 paid = orders[orders["입금여부"] == True]["합계"].sum()
 unpaid = orders[orders["입금여부"] == False]["합계"].sum()
@@ -83,74 +85,9 @@ m2.metric("입금액", f"{paid:,.0f}")
 m3.metric("미입금", f"{unpaid:,.0f}")
 
 
-# 주문 입력
-st.subheader("주문입력")
-
-with st.form("order", clear_on_submit=True):
-
-    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-
-    d = c1.date_input("날짜", date.today())
-    name = c2.text_input("고객명")
-    product = c3.text_input("상품번호")
-    qty = c4.number_input("수량", 1)
-    price = c5.number_input("단가", 0)
-    paid = c6.checkbox("입금완료")
-
-    submit = c7.form_submit_button("엔터주문추가")
-
-    if submit and name:
-
-        new = pd.DataFrame([{
-            "삭제": False,
-            "날짜": d.strftime("%y-%m-%d"),
-            "고객명": name,
-            "상품번호": product,
-            "수량": qty,
-            "단가": price,
-            "입금여부": paid
-        }])
-
-        orders = pd.concat([orders, new], ignore_index=True)
-
-        save(orders)
-
-        st.rerun()
-
-
-# 전체 버튼
-b1, b2 = st.columns(2)
-
-with b1:
-
-    if st.button("전체입금"):
-        orders["입금여부"] = True
-        save(orders)
-        st.rerun()
-
-with b2:
-
-    if st.button("전체삭제"):
-        orders = orders.iloc[0:0]
-        save(orders)
-        st.rerun()
-
-
-# 고객 검색
-search = st.text_input("고객검색")
-
+# 주문리스트
 display = orders.copy()
 
-if search:
-    display = display[display["고객명"].astype(str).str.contains(search)]
-
-# 고객명 정렬
-display = display.sort_values("고객명")
-
-display["합계"] = display["수량"] * display["단가"]
-
-
-# 주문 리스트
 st.subheader("주문리스트")
 
 edited = st.data_editor(
@@ -158,23 +95,16 @@ edited = st.data_editor(
     use_container_width=True
 )
 
-# 합계 자동 계산
+# 🔥 엔터 입력시 합계 자동 적용
+edited["수량"] = pd.to_numeric(edited["수량"], errors="coerce").fillna(0)
+edited["단가"] = pd.to_numeric(edited["단가"], errors="coerce").fillna(0)
+
 edited["합계"] = edited["수량"] * edited["단가"]
 
 save(edited.drop(columns="합계"))
 
 
-# 선택 삭제
-if st.button("선택삭제"):
-
-    edited = edited[edited["삭제"] == False]
-
-    save(edited.drop(columns="합계"))
-
-    st.rerun()
-
-
-# 고객 정산서
+# 고객정산서
 st.subheader("고객정산서")
 
 customer = st.selectbox("고객명", edited["고객명"].unique())
@@ -200,7 +130,7 @@ with c2:
     st.download_button("고객 엑셀다운", excel_buffer.getvalue(), f"{customer}.xlsx")
 
 
-# 고객별 미입금 / 합계
+# 고객별 합계
 c1, c2 = st.columns(2)
 
 with c1:
@@ -226,7 +156,7 @@ vip["등급"] = vip["합계"].apply(
 st.dataframe(vip)
 
 
-# 이번달 일별 매출
+# 매출그래프
 st.subheader("이번달 일별 매출")
 
 chart = orders.copy()
